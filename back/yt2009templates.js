@@ -117,7 +117,7 @@ module.exports = {
                 <div class="video-bar-item">
                     <div class="v90WideEntry">
                         <div class="v90WrapperOuter">
-                            <div class="v90WrapperInner"><a href="/watch?v=${id}" class="video-thumb-link" rel="nofollow"><img src="$${thumbUrl}" class="vimg90"></a>
+                            <div class="v90WrapperInner"><a href="/watch?v=${id}" class="video-thumb-link" rel="nofollow"><img src="${thumbUrl}" class="vimg90"></a>
                                 <div class="video-time" style="margin-top: -28px;"><a href="/watch?v=${id}" rel="nofollow">${time}</a></div>
                             </div>
                         </div>
@@ -399,6 +399,12 @@ module.exports = {
         let thumbUrl = utils.getThumbUrl(id, flags)
         let viewCount = noLang ? `lang_views_prefix${utils.countBreakup(utils.bareCount(views))}lang_views_suffix`
                       : views
+        if(typeof(flags) !== "string") {
+            try {
+                flags = flags.headers.cookie
+            }
+            catch(error) {}
+        }
         return `
         <div class="video-cell *vl" style="width:19.5%" data-id="${id}">
             <div class="video-entry yt-uix-hovercard">
@@ -537,7 +543,7 @@ module.exports = {
             </div>
         </div>`
     },
-    "searchPlaylistEntry": function(id, protocol, videos, name, videoCount) {
+    "searchPlaylistEntry": function(id, protocol, videos, name, videoCount, a) {
         return `
         <div class="playlist-cell" style="width:24.5%">
             <div class="playlist-entry yt-uix-hovercard">
@@ -545,8 +551,8 @@ module.exports = {
                     <div class="vCluster120WideEntry">
                         <div class="vCluster120WrapperOuter playlist-thumbnail">
                             <div class="vCluster120WrapperInner">
-                                <a href="/playlist?list=${id}" rel="nofollow"><img src="${protocol}://i.ytimg.com/vi/${videos[0].id}/hqdefault.jpg" class="vimgCluster120 yt-uix-hovercard-target"></a>
-                                <div class="video-corner-text"><span>${videos[0].length}</span></div>
+                                <a href="/playlist?list=${id}" rel="nofollow">${videos[0] ? `<img src="${protocol}://i.ytimg.com/vi/${videos[0].id}/hqdefault.jpg" class="vimgCluster120 yt-uix-hovercard-target">` : (a ? `<img src="${a}" class="vimgCluster120 yt-uix-hovercard-target"/>` : "")}</a>
+                                ${videos[0] ? `<div class="video-corner-text"><span>${videos[0].length}</span></div>` : ""}
                             </div>
                         </div>
                     </div>
@@ -900,7 +906,7 @@ module.exports = {
     }
     </style>
     `,
-    "playerHDBtnJS": function(id, use720p) {
+    "playerHDBtnJS": function(id, use720p, autoHQ) {
         return `
         //exp_hq
         seekbarRemoveWidth = 245;
@@ -914,7 +920,7 @@ module.exports = {
             if(!hqPlaying) {
                 hqPlaying = true;
                 $("video").innerHTML = "";
-                var length = seconds_to_time(Math.floor(video.duration))
+                var length = seconds_to_time(Math.floor(video.duration || 0))
                 $("video").src = "/${use720p ? "exp_hd" : "get_480"}?video_id=${id}"
                 setTimeout(function() {
                     $(".video_controls .timer").innerHTML = "0:00 / " + length;
@@ -923,7 +929,7 @@ module.exports = {
                 $(".video_controls .hq").className = "hq ${use720p ? "hd" : ""} enabled"
                 video_play()
             } else {
-                $("video").src = "/assets/${id}.mp4";
+                $("video").src = "/get_video?video_id=${id}/mp4";
                 hqPlaying = false;
                 $(".video_controls .hq").className = "hq ${use720p ? "hd" : ""}"
             }
@@ -932,12 +938,22 @@ module.exports = {
         // fallback do 360p
         $("video").addEventListener("error", function() {
             if(hqPlaying) {
-                $("video").src = "/assets/${id}.mp4";
+                $("video").src = "/get_video?video_id=${id}/mp4";
                 hqPlaying = false;
                 $(".video_controls .hq").className = "hq ${use720p ? "hd" : ""}"
             }
-        }, false)`
+        }, false)${autoHQ ? `
+        
+        hqPlaying = true;
+        showLoadingSprite();` : ""}`
     },
+    "hqCheckConnection": `
+        
+    if(navigator.connection
+    && navigator.connection.downlink >= 10) {
+        try {$(".video_controls .hq").click()}catch(error) {}
+    }
+    `,
     "channelspageChannel": function(channel, channelName) {
         channel.url = channel.url.replace(`https://www.youtube.com`, ``)
         return `<div class="channel-cell" style="width:19.5%">
@@ -1008,7 +1024,7 @@ xmlns:yt='http://gdata.youtube.com/schemas/2007'>
     <openSearch:startIndex>1</openSearch:startIndex>
     <openSearch:itemsPerPage>25</openSearch:itemsPerPage>`,
     "gdata_feedEnd": "\n</feed>",
-    "gdata_feedVideo": function(id, title, author, views, length, description, uploadDate, keywords, category, flags) {
+    "gdata_feedVideo": function(id, title, author, views, length, description, uploadDate, keywords, category, flags, qualities) {
         // flag handling
         if((flags || []).includes("realistic-view-count")
         && views >= 100000) {
@@ -1046,6 +1062,17 @@ xmlns:yt='http://gdata.youtube.com/schemas/2007'>
             unduplicateKeywordList.push("-")
         }
 
+        // qualities
+        let qualityCode = ""
+        if(qualities) {
+            if(qualities.includes("480p")) {
+                qualityCode += `<media:content url='http://${config.ip}:${config.port}/get_480?video_id=${id}' type='video/3gpp' medium='video' expression='full' duration='999' yt:format='14'/>`
+            }
+            if(qualities.includes("720p")) {
+                qualityCode += `<media:content url='http://${config.ip}:${config.port}/exp_hd?video_id=${id}' type='video/3gpp' medium='video' expression='full' duration='999' yt:format='8'/>`
+            }
+        }
+
         // category names
         category = (category || "-").split("&").join("&amp;")
         return `
@@ -1067,7 +1094,7 @@ xmlns:yt='http://gdata.youtube.com/schemas/2007'>
             </gd:comments>
             <media:group>
                 <media:category label='${category}' scheme='http://gdata.youtube.com/schemas/2007/categories.cat'>${category}</media:category>
-                <media:content url='http://${config.ip}:${config.port}/channel_fh264_getvideo?v=${id}' type='video/3gpp' medium='video' expression='full' duration='999' yt:format='3'/>
+                <media:content url='http://${config.ip}:${config.port}/channel_fh264_getvideo?v=${id}' type='video/3gpp' medium='video' expression='full' duration='999' yt:format='3'/>${qualityCode}
                 <media:description type='plain'>${description.split("<").join("").split(">").join("").split("&").join("")}</media:description>
                 <media:keywords>${unduplicateKeywordList.join(", ")}</media:keywords>
                 <media:player url='http://www.youtube.com/watch?v=${id}'/>
@@ -1173,7 +1200,7 @@ xmlns:yt='http://gdata.youtube.com/schemas/2007'>
 		<summary>${summary}</summary>
 	</entry>`
     },
-    "gdata_activityEntry": function(type, author, title, id, timestamp) {
+    "gdata_activityEntry": function(type, author, title, id, timestamp, length, views) {
         return `
     <entry>
 		<id>tag:youtube.com,2008:video:${id}</id>
@@ -1182,12 +1209,19 @@ xmlns:yt='http://gdata.youtube.com/schemas/2007'>
 		<category scheme='http://gdata.youtube.com/schemas/2007/userevents.cat' term='${type}'/>
 		<title>${title.split("<").join("").split(">").join("").split("&").join("").trim()}</title>
 		<yt:videoid>${id}</yt:videoid>
-        <yt:username>${author}</yt:username>
+        <yt:username>${id}</yt:username>
         <yt:groupId>0</yt:groupId>
         <author>
 			<name>${author}</name>
 			<uri>http://gdata.youtube.com/feeds/api/users/${author}</uri>
 		</author>
+        <link rel='http://gdata.youtube.com/schemas/2007#video' href='http://${config.ip}:${config.port}/feeds/api/videos/${id}'>
+            ${this.gdata_feedVideo(
+                id, title, author,
+                utils.bareCount(views), utils.time_to_seconds(length),
+                "-", timestamp, "-", "-", ""
+            )}
+        </link>
 	</entry>`
     },
     "gdata_userPlaylistStart": function(playlistId, playlistName, firstVideoId, author, updateDate, videoCount) {
@@ -1290,7 +1324,7 @@ xmlns:yt='http://gdata.youtube.com/schemas/2007'>
                         utils.fakeDatesModern("2010-04-02", utils.relativeToAbsoluteApprox(video.upload)), langs.get_language(req)
                     ) : video.upload}</span>
                     <span id="video-num-views-${video.id}" class="video-view-count">lang_views_prefix${utils.countBreakup(
-                        utils.bareCount(video.views)
+                        utils.bareCount(video.views || "0")
                     )}lang_views_suffix</span>
                     <span id="video-average-rating-${video.id}" class="video-rating-grid ">
                         <div>
