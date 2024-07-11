@@ -1603,7 +1603,7 @@ module.exports = {
                         getOldBg("404")
                     })
                 }).catch(e => {
-                    fetch(data.bannerUrl.replace("googleusercontent", "ggpht"), {
+                    fetch(data.bannerUrl.replace("googleusercontent", "yt4.ggpht"), {
                         "headers": yt2009constants.headers
                     }).then(r => {
                         fs.writeFileSync(`../assets/${cId}_banner.jpg`, "")
