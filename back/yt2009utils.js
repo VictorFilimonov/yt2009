@@ -514,7 +514,7 @@ module.exports = {
         }
         fname = fname.replace(".png", "")
         if(!fs.existsSync(`../assets/${fname}.png`)) {
-            fetch(link.replace("ggpht.com", "googleusercontent.com"), {
+            fetch(link.replace("yt3.ggpht.com", "yt4.ggpht.com"), {
                 "headers": constants.headers
             }).then(r => {
                 r.buffer().then(buffer => {
