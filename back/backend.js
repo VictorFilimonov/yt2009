@@ -36,6 +36,7 @@ const video_rating = require("./cache_dir/rating_cache_manager")
 const config = require("./config.json")
 const child_process = require("child_process")
 const yt2009charts = require("./yt2009charts")
+const yt2009gdataauths = require("./yt2009mobileauths")
 let devTimings = false;
 const package = require("../package.json")
 const version = package.version;
@@ -965,7 +966,7 @@ cps.swf/mobile videoinfo
 ======
 */
 app.get("/feeds/api/videos/", (req, res) => {
-    if(!req.query.q) {
+    if(!req.query.q && !req.query.vq) {
         yt2009_mobile.videoData(req, res)
         return;
     }
@@ -975,7 +976,7 @@ app.get("/feeds/api/videos/", (req, res) => {
 //left this when messing about with leanbacklite_v3
 // this gets it partially working lol
 app.post("/feeds/api/videos/", (req, res) => {
-    if(!req.query.q) {
+    if(!req.query.q && !req.query.vq) {
         yt2009_mobile.videoData(req, res)
         return;
     }
@@ -1842,7 +1843,7 @@ app.get("/feeds/api/videos/*/related", (req, res) => {
     yt2009_mobile.apkVideoRelated(req, res)
 })
 app.get("/feeds/api/videos/*", (req, res) => {
-    if(!req.query.q) {
+    if(!req.query.q && !req.query.vq) {
         yt2009_mobile.videoData(req, res)
         return;
     }
@@ -1959,6 +1960,13 @@ app.get("/get_name_by_session", (req, res) => {
         }))
     }
     catch(error) {}
+})
+
+app.get("/mobile/gdata_gen_auth_page", (req, res) => {
+    yt2009gdataauths.genMainPage(req, res)
+})
+app.post("/mobile/gdata_set_auth", (req, res) => {
+    yt2009gdataauths.setAuth(req, res)
 })
 
 /*
@@ -2472,90 +2480,18 @@ app.get("/retry_video", (req, res) => {
     }
 
     // retry if so
-    // get separate 360p video and audio and combine
-    let ytdl = require("ytdl-core")
-    
-    let v = ytdl.getInfo("https://www.youtube.com/watch?v=" + id)
-    let qualityItags = {}
-    let videoItag = ""
-    let audioItag = ""
-    v.catch(error => {
-        res.sendStatus(404)
+    if(yt2009_exports.getStatus(id)) {
+        // wait for mp4 while it's downloading
+        yt2009_exports.waitForStatusChange(id, () => {
+            try {
+                res.redirect("/assets/" + id + ".mp4")
+            }catch(error) {}
+        })
         return;
-    })
-    v.then(v => {
-        v.formats.forEach(format => {
-            if(format.mimeType.includes("video/mp4")
-            && format.mimeType.includes("avc")
-            && format.height <= 360) {
-                qualityItags[format.qualityLabel] = format.itag;
-            } else if(format.mimeType.includes("audio/mp4")) {
-                audioItag = format.itag
-            }
-        })
-
-        // get highest video quality up to 360p (don't assume 360
-        // as it won't be available everywhere)
-        let qNames = []
-        for(let name in qualityItags) {
-            qNames.push(parseInt(name))
-        }
-        qNames = qNames.sort((a, b) => b - a)
-        videoItag = qualityItags[qNames[0] + "p"]
-
-        // download both
-        // call mergeFormats once both done
-        let vDownloaded = false;
-        let aDownloaded = false;
-
-        // video
-        let vStream = fs.createWriteStream(`../assets/${id}-v.mp4`)
-        vStream.on("finish", () => {
-            vDownloaded = true;
-            if(vDownloaded && aDownloaded) {
-                mergeFormats()
-            }
-        })
-        ytdl.downloadFromInfo(v, {"quality": videoItag})
-        .on("error", (error) => {
-            console.log("retry_video video: " + error)
-            res.sendStatus(404)
-            return;
-        })
-        .pipe(vStream)
-
-        // audio
-        let audioStream = fs.createWriteStream(`../assets/${id}-a.mp3`)
-        audioStream.on("finish", () => {
-            aDownloaded = true;
-            if(vDownloaded && aDownloaded) {
-                mergeFormats()
-            }
-        })
-        ytdl.downloadFromInfo(v, {"quality": audioItag})
-        .on("error", (error) => {
-            console.log("retry_video audio: " + error)
-            res.sendStatus(404)
-            return;
-        })
-        .pipe(audioStream)
-    })
-
-    function mergeFormats() {
-        let cmd = yt2009_templates.format_merge_command(
-            `${__dirname}/../assets/${id}-v.mp4`,
-            `${__dirname}/../assets/${id}-a.mp3`,
-            `${__dirname}/../assets/${id}.mp4`
-        )
-        child_process.exec(cmd, (error, stdout, stderr) => {
-            res.redirect(`/assets/${id}.mp4`)
-            if(fs.existsSync(`${__dirname}/../assets/${id}-v.mp4`)
-            && fs.existsSync(`${__dirname}/../assets/${id}-a.mp3`)) {
-                fs.unlinkSync(`${__dirname}/../assets/${id}-v.mp4`)
-                fs.unlinkSync(`${__dirname}/../assets/${id}-a.mp3`)
-            }
-        })
     }
+    yt2009_utils.saveMp4(id, (path => {
+        res.redirect("/assets/" + id + ".mp4")
+    }))
 })
 
 /*
